@@ -42,8 +42,9 @@ __author_email__ = "biziqe@mathieu.fenniak.net"
 __maintainer__ = "Phaseit, Inc."
 __maintainer_email = "PyPDF2@phaseit.net"
 
-import string
 import math
+import re
+import string
 import struct
 import sys
 import uuid
@@ -74,6 +75,10 @@ if version_info < ( 2, 5 ):
 else:
     from hashlib import md5
 import uuid
+
+
+# "Magic Numbers" supposed to be at the beginning of the file
+MAGIC_NUMBERS = b'%PDF-'
 
 
 class PdfFileWriter(object):
@@ -250,17 +255,17 @@ class PdfFileWriter(object):
 
         :param str fname: The filename to display.
         :param str fdata: The data in the file.
-      
+
         Reference:
         https://www.adobe.com/content/dam/Adobe/en/devnet/acrobat/pdfs/PDF32000_2008.pdf
         Section 7.11.3
         """
-        
+
         # We need 3 entries:
         # * The file's data
         # * The /Filespec entry
         # * The file's name, which goes in the Catalog
-        
+
 
         # The entry for the file
         """ Sample:
@@ -272,7 +277,7 @@ class PdfFileWriter(object):
         stream
         Hello world!
         endstream
-        endobj        
+        endobj
         """
         file_entry = DecodedStreamObject()
         file_entry.setData(fdata)
@@ -291,14 +296,14 @@ class PdfFileWriter(object):
         """
         efEntry = DictionaryObject()
         efEntry.update({ NameObject("/F"):file_entry })
-        
+
         filespec = DictionaryObject()
         filespec.update({
                 NameObject("/Type"): NameObject("/Filespec"),
                 NameObject("/F"): createStringObject(fname),  # Perhaps also try TextStringObject
                 NameObject("/EF"): efEntry
                 })
-                
+
         # Then create the entry for the root, as it needs a reference to the Filespec
         """ Sample:
         1 0 obj
@@ -309,13 +314,13 @@ class PdfFileWriter(object):
          /Names << /EmbeddedFiles << /Names [(hello.txt) 7 0 R] >> >>
         >>
         endobj
-        
+
         """
         embeddedFilesNamesDictionary = DictionaryObject()
         embeddedFilesNamesDictionary.update({
                 NameObject("/Names"): ArrayObject([createStringObject(fname), filespec])
                 })
-        
+
         embeddedFilesDictionary = DictionaryObject()
         embeddedFilesDictionary.update({
                 NameObject("/EmbeddedFiles"): embeddedFilesNamesDictionary
@@ -329,7 +334,7 @@ class PdfFileWriter(object):
         """
         Copy pages from reader to writer. Includes an optional callback parameter
         which is invoked after pages are appended to the writer.
-        
+
         :param reader: a PdfFileReader object from which to copy page
             annotations to this writer object.  The writer's annots
         will then be updated
@@ -373,7 +378,7 @@ class PdfFileWriter(object):
     def cloneReaderDocumentRoot(self, reader):
         '''
         Copy the reader document root to the writer.
-        
+
         :param reader:  PdfFileReader from the document root should be copied.
         :callback after_page_append
         '''
@@ -1145,6 +1150,15 @@ class PdfFileReader(object):
             fileobj = open(stream, 'rb')
             stream = BytesIO(b_(fileobj.read()))
             fileobj.close()
+        regex = re.compile(MAGIC_NUMBERS)
+        utils.readUntilRegex(stream, regex)
+        if stream.tell():
+            idx = stream.tell()
+            stream.seek(0)
+            preamble = stream.read(idx)
+            warnings.warn('Trimmed %i bytes from file beginning: %s' %
+                    (len(preamble), preamble))
+            stream = BytesIO(stream.read())
         self.read(stream)
         self.stream = stream
 
